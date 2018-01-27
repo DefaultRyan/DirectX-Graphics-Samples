@@ -13,30 +13,24 @@
 
 #include "DXSample.h"
 
-using namespace Platform;
-using namespace Windows::ApplicationModel;
-using namespace Windows::ApplicationModel::Activation;
-using namespace Windows::ApplicationModel::Core;
-using namespace Windows::UI::Core;
-using namespace Windows::UI::ViewManagement;
-
-ref class View sealed : public IFrameworkView
+struct View final : winrt::implements<View, winrt::Windows::ApplicationModel::Core::IFrameworkView>
 {
-public:
-	View(UINT_PTR pSample);
+    explicit View(DXSample* pSample)
+        : m_pSample(pSample)
+    {}
 
-	virtual void Initialize(CoreApplicationView^ applicationView);
-	virtual void SetWindow(CoreWindow^ window);
-	virtual void Load(String^ entryPoint);
-	virtual void Run();
-	virtual void Uninitialize();
+    void Initialize(winrt::Windows::ApplicationModel::Core::CoreApplicationView const& applicationView);
+    void SetWindow(winrt::Windows::UI::Core::CoreWindow const& window);
+    void Load(winrt::hstring const& entryPoint);
+    void Run();
+    void Uninitialize();
 
 private:
-	void OnActivated(CoreApplicationView^ applicationView, IActivatedEventArgs^ args);
-	void OnKeyDown(CoreWindow^ window, KeyEventArgs^ keyEventArgs);
-	void OnKeyUp(CoreWindow^ window, KeyEventArgs^ keyEventArgs);
-	void OnClosed(CoreWindow ^sender, CoreWindowEventArgs ^args);
-
-	DXSample* m_pSample;
-	bool m_windowClosed;
+    void OnActivated(winrt::Windows::ApplicationModel::Core::CoreApplicationView const& applicationView, winrt::Windows::ApplicationModel::Activation::IActivatedEventArgs const& args);
+    void OnKeyDown(winrt::Windows::UI::Core::CoreWindow const& window, winrt::Windows::UI::Core::KeyEventArgs const& keyEventArgs);
+    void OnKeyUp(winrt::Windows::UI::Core::CoreWindow const& window, winrt::Windows::UI::Core::KeyEventArgs const& keyEventArgs);
+    void OnClosed(winrt::Windows::UI::Core::CoreWindow const& sender, winrt::Windows::UI::Core::CoreWindowEventArgs const& args);
+    
+    DXSample * m_pSample;
+    bool m_windowClosed = false;
 };

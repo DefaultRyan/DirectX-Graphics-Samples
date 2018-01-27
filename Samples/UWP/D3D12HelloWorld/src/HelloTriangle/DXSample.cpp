@@ -12,19 +12,17 @@
 #include "stdafx.h"
 #include "DXSample.h"
 
-using namespace Microsoft::WRL;
+using namespace winrt;
 
 DXSample::DXSample(UINT width, UINT height, std::wstring name) :
 	m_width(width),
 	m_height(height),
-	m_title(name),
-	m_useWarpDevice(false)
+	m_title(std::move(name))
 {
 	WCHAR assetsPath[512];
 	GetAssetsPath(assetsPath, _countof(assetsPath));
 	m_assetsPath = assetsPath;
 
-	m_aspectRatio = static_cast<float>(width) / static_cast<float>(height);
 }
 
 DXSample::~DXSample()
@@ -40,12 +38,11 @@ std::wstring DXSample::GetAssetFullPath(LPCWSTR assetName)
 // Helper function for acquiring the first available hardware adapter that supports Direct3D 12.
 // If no such adapter can be found, *ppAdapter will be set to nullptr.
 _Use_decl_annotations_
-void DXSample::GetHardwareAdapter(IDXGIFactory2* pFactory, IDXGIAdapter1** ppAdapter)
+winrt::com_ptr<IDXGIAdapter1> DXSample::GetHardwareAdapter(_In_ IDXGIFactory2* pFactory)
 {
-	ComPtr<IDXGIAdapter1> adapter;
-	*ppAdapter = nullptr;
+    com_ptr<IDXGIAdapter1> adapter;
 
-	for (UINT adapterIndex = 0; DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(adapterIndex, &adapter); ++adapterIndex)
+	for (UINT adapterIndex = 0; DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(adapterIndex, adapter.put()); ++adapterIndex)
 	{
 		DXGI_ADAPTER_DESC1 desc;
 		adapter->GetDesc1(&desc);
@@ -59,21 +56,21 @@ void DXSample::GetHardwareAdapter(IDXGIFactory2* pFactory, IDXGIAdapter1** ppAda
 
 		// Check to see if the adapter supports Direct3D 12, but don't create the
 		// actual device yet.
-		if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
+		if (SUCCEEDED(D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
 		{
 			break;
 		}
+        adapter = nullptr;
 	}
-
-	*ppAdapter = adapter.Detach();
+    return adapter;
 }
 
 // Helper function for setting the window's title text.
 void DXSample::SetCustomWindowText(LPCWSTR text)
 {
 	std::wstring windowText = m_title.empty() ? text : m_title + L": " + text;
-	auto applicationView = Windows::UI::ViewManagement::ApplicationView::GetForCurrentView();
-	applicationView->Title = ref new Platform::String(windowText.c_str());
+	auto applicationView = winrt::Windows::UI::ViewManagement::ApplicationView::GetForCurrentView();
+    applicationView.Title(windowText);
 }
 
 // Helper function for parsing any supplied command line args.

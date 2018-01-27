@@ -13,12 +13,10 @@
 #include "ViewProvider.h"
 #include "View.h"
 
-ViewProvider::ViewProvider(UINT_PTR pSample) :
-	m_pSample(pSample)
-{
-}
+using namespace winrt;
+using namespace winrt::Windows::ApplicationModel::Core;
 
-Windows::ApplicationModel::Core::IFrameworkView^ ViewProvider::CreateView()
+IFrameworkView ViewProvider::CreateView()
 {
-	return ref new View(m_pSample);
+    return make<View>(m_pSample);
 }

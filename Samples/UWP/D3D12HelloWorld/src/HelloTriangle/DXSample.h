@@ -37,16 +37,16 @@ public:
 
 protected:
 	std::wstring GetAssetFullPath(LPCWSTR assetName);
-	void GetHardwareAdapter(_In_ IDXGIFactory2* pFactory, _Outptr_result_maybenull_ IDXGIAdapter1** ppAdapter);
+    static winrt::com_ptr<IDXGIAdapter1> GetHardwareAdapter(_In_ IDXGIFactory2* pFactory);
 	void SetCustomWindowText(LPCWSTR text);
 
 	// Viewport dimensions.
 	UINT m_width;
 	UINT m_height;
-	float m_aspectRatio;
+	float m_aspectRatio = static_cast<float>(m_width) / static_cast<float>(m_height);
 
 	// Adapter info.
-	bool m_useWarpDevice;
+	bool m_useWarpDevice = false;
 
 private:
 	// Root assets path.
