@@ -13,12 +13,13 @@
 #include "ViewProvider.h"
 #include "D3D12nBodyGravity.h"
 
-[Platform::MTAThread]
-int WINAPIV main(Platform::Array<Platform::String^>^ /*params*/)
-{
-	D3D12nBodyGravity sample(1200, 900, L"");
-	auto viewProvider = ref new ViewProvider(reinterpret_cast<UINT_PTR>(&sample));
+using namespace winrt;
 
-	Windows::ApplicationModel::Core::CoreApplication::Run(viewProvider);
-	return 0;
+int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPSTR, int)
+{
+    init_apartment();
+    D3D12nBodyGravity sample(1200, 900, L"");
+    auto viewProvider = make<ViewProvider>(&sample);
+    winrt::Windows::ApplicationModel::Core::CoreApplication::Run(viewProvider);
+    return 0;
 }

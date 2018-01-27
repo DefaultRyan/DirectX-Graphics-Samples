@@ -12,6 +12,9 @@
 #include "stdafx.h"
 #include "SimpleCamera.h"
 
+using namespace DirectX;
+using namespace winrt::Windows::System;
+
 SimpleCamera::SimpleCamera():
 	m_initialPosition(0, 0, 0),
 	m_position(m_initialPosition),
@@ -109,67 +112,67 @@ XMMATRIX SimpleCamera::GetProjectionMatrix(float fov, float aspectRatio, float n
 	return XMMatrixPerspectiveFovRH(fov, aspectRatio, nearPlane, farPlane);
 }
 
-void SimpleCamera::OnKeyDown(WPARAM key)
+void SimpleCamera::OnKeyDown(winrt::Windows::System::VirtualKey key)
 {
 	switch (key)
 	{
-	case 'W':
+    case VirtualKey::W:
 		m_keysPressed.w = true;
 		break;
-	case 'A':
+	case VirtualKey::A:
 		m_keysPressed.a = true;
 		break;
-	case 'S':
+	case VirtualKey::S:
 		m_keysPressed.s = true;
 		break;
-	case 'D':
+	case VirtualKey::D:
 		m_keysPressed.d = true;
 		break;
-	case VK_LEFT:
+	case VirtualKey::Left:
 		m_keysPressed.left = true;
 		break;
-	case VK_RIGHT:
+	case VirtualKey::Right:
 		m_keysPressed.right = true;
 		break;
-	case VK_UP:
+	case VirtualKey::Up:
 		m_keysPressed.up = true;
 		break;
-	case VK_DOWN:
+	case VirtualKey::Down:
 		m_keysPressed.down = true;
 		break;
-	case VK_ESCAPE:
+    case VirtualKey::Escape:
 		Reset();
 		break;
 	}
 }
 
-void SimpleCamera::OnKeyUp(WPARAM key)
+void SimpleCamera::OnKeyUp(winrt::Windows::System::VirtualKey key)
 {
 	switch (key)
 	{
-	case 'W':
-		m_keysPressed.w = false;
+    case VirtualKey::W:
+        m_keysPressed.w = false;
 		break;
-	case 'A':
-		m_keysPressed.a = false;
+    case VirtualKey::A:
+        m_keysPressed.a = false;
 		break;
-	case 'S':
-		m_keysPressed.s = false;
+    case VirtualKey::S:
+        m_keysPressed.s = false;
 		break;
-	case 'D':
-		m_keysPressed.d = false;
+    case VirtualKey::D:
+        m_keysPressed.d = false;
 		break;
-	case VK_LEFT:
-		m_keysPressed.left = false;
+    case VirtualKey::Left:
+        m_keysPressed.left = false;
 		break;
-	case VK_RIGHT:
-		m_keysPressed.right = false;
+    case VirtualKey::Right:
+        m_keysPressed.right = false;
 		break;
-	case VK_UP:
-		m_keysPressed.up = false;
+    case VirtualKey::Up:
+        m_keysPressed.up = false;
 		break;
-	case VK_DOWN:
-		m_keysPressed.down = false;
+    case VirtualKey::Down:
+        m_keysPressed.down = false;
 		break;
 	}
 }

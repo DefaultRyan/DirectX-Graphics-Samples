@@ -12,80 +12,74 @@
 #include "stdafx.h"
 #include "View.h"
 
-using namespace Windows::Foundation;
+using namespace winrt;
+using namespace winrt::Windows::ApplicationModel;
+using namespace winrt::Windows::ApplicationModel::Activation;
+using namespace winrt::Windows::ApplicationModel::Core;
+using namespace winrt::Windows::UI::Core;
+using namespace winrt::Windows::UI::ViewManagement;
 
-View::View(UINT_PTR pSample) :
-	m_pSample(reinterpret_cast<DXSample*>(pSample)),
-	m_windowClosed(false)
+
+void View::Initialize(CoreApplicationView const& applicationView)
 {
+    applicationView.Activated({ this, &View::OnActivated });
+
+    // For simplicity, this sample ignores CoreApplication's Suspend and Resume
+    // events which a typical app should subscribe to.
 }
 
-void View::Initialize(CoreApplicationView^ applicationView)
+void View::SetWindow(CoreWindow const& window)
 {
-	applicationView->Activated += ref new TypedEventHandler<CoreApplicationView^, IActivatedEventArgs^>(this, &View::OnActivated);
+    window.KeyDown({ this, &View::OnKeyDown });
+    window.KeyUp({ this, &View::OnKeyUp });
+    window.Closed({ this, &View::OnClosed });
 
-	// For simplicity, this sample ignores CoreApplication's Suspend and Resume
-	// events which a typical app should subscribe to.
+    // For simplicity, this sample ignores a number of events on CoreWindow that a
+    // typical app should subscribe to.
 }
 
-void View::SetWindow(CoreWindow^ window)
-{
-	window->KeyDown += ref new TypedEventHandler<CoreWindow^, KeyEventArgs^>(this, &View::OnKeyDown);
-	window->KeyUp += ref new TypedEventHandler<CoreWindow^, KeyEventArgs^>(this, &View::OnKeyUp);
-	window->Closed += ref new TypedEventHandler<CoreWindow^, CoreWindowEventArgs^>(this, &View::OnClosed);
-
-	// For simplicity, this sample ignores a number of events on CoreWindow that a
-	// typical app should subscribe to.
-}
-
-void View::Load(String^ /*entryPoint*/)
+void View::Load(hstring const& /*entryPoint*/)
 {
 }
 
 void View::Run()
 {
-	auto applicationView = ApplicationView::GetForCurrentView();
-	applicationView->Title = ref new Platform::String(m_pSample->GetTitle());
+    auto applicationView = ApplicationView::GetForCurrentView();
+    applicationView.Title(m_pSample->GetTitle());
 
-	m_pSample->OnInit();
+    m_pSample->OnInit();
 
-	while (!m_windowClosed)
-	{
-		CoreWindow::GetForCurrentThread()->Dispatcher->ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
+    while (!m_windowClosed)
+    {
+        CoreWindow::GetForCurrentThread().Dispatcher().ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
 
-		m_pSample->OnUpdate();
-		m_pSample->OnRender();
-	}
+        m_pSample->OnUpdate();
+        m_pSample->OnRender();
+    }
 
-	m_pSample->OnDestroy();
+    m_pSample->OnDestroy();
 }
 
 void View::Uninitialize()
 {
 }
 
-void View::OnActivated(CoreApplicationView^ /*applicationView*/, IActivatedEventArgs^ args)
+void View::OnActivated(CoreApplicationView const& /*applicationView*/, IActivatedEventArgs const& args)
 {
-	CoreWindow::GetForCurrentThread()->Activate();
+    CoreWindow::GetForCurrentThread().Activate();
 }
 
-void View::OnKeyDown(CoreWindow^ /*window*/, KeyEventArgs^ args)
+void View::OnKeyDown(CoreWindow const& /*window*/, KeyEventArgs const& args)
 {
-	if (static_cast<UINT>(args->VirtualKey) < 256)
-	{
-		m_pSample->OnKeyDown(static_cast<UINT8>(args->VirtualKey));
-	}
+    m_pSample->OnKeyDown(args.VirtualKey());
 }
 
-void View::OnKeyUp(CoreWindow^ /*window*/, KeyEventArgs^ args)
+void View::OnKeyUp(CoreWindow const& /*window*/, KeyEventArgs const& args)
 {
-	if (static_cast<UINT>(args->VirtualKey) < 256)
-	{
-		m_pSample->OnKeyUp(static_cast<UINT8>(args->VirtualKey));
-	}
+    m_pSample->OnKeyUp(args.VirtualKey());
 }
 
-void View::OnClosed(CoreWindow^ /*sender*/, CoreWindowEventArgs^ /*args*/)
+void View::OnClosed(CoreWindow const& /*sender*/, CoreWindowEventArgs const& /*args*/)
 {
-	m_windowClosed = true;
+    m_windowClosed = true;
 }

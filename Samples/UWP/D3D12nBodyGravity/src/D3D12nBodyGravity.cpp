@@ -12,25 +12,16 @@
 #include "stdafx.h"
 #include "D3D12nBodyGravity.h"
 
+using namespace winrt;
+using namespace DirectX;
+
 // InterlockedCompareExchange returns the object's value if the 
 // comparison fails.  If it is already 0, then its value won't 
 // change and 0 will be returned.
 #define InterlockedGetValue(object) InterlockedCompareExchange(object, 0, 0)
 
-const float D3D12nBodyGravity::ParticleSpread = 400.0f;
-
 D3D12nBodyGravity::D3D12nBodyGravity(UINT width, UINT height, std::wstring name) :
-	DXSample(width, height, name),
-	m_frameIndex(0),
-	m_viewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)),
-	m_scissorRect(0, 0, static_cast<LONG>(width), static_cast<LONG>(height)),
-	m_rtvDescriptorSize(0),
-	m_srvUavDescriptorSize(0),
-	m_pConstantBufferGSData(nullptr),
-	m_renderContextFenceValue(0),
-	m_terminating(0),
-	m_srvIndex{},
-	m_frameFenceValues{}
+	DXSample(width, height, name)
 {
 	for (int n = 0; n < ThreadCount; n++)
 	{
@@ -67,8 +58,8 @@ void D3D12nBodyGravity::LoadPipeline()
 	// Enable the debug layer (requires the Graphics Tools "optional feature").
 	// NOTE: Enabling the debug layer after device creation will invalidate the active device.
 	{
-		ComPtr<ID3D12Debug> debugController;
-		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
+		com_ptr<ID3D12Debug> debugController;
+		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(debugController.put()))))
 		{
 			debugController->EnableDebugLayer();
 
@@ -78,29 +69,28 @@ void D3D12nBodyGravity::LoadPipeline()
 	}
 #endif
 
-	ComPtr<IDXGIFactory4> factory;
-	ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&factory)));
+    com_ptr<IDXGIFactory4> factory;
+	check_hresult(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(factory.put())));
 
 	if (m_useWarpDevice)
 	{
-		ComPtr<IDXGIAdapter> warpAdapter;
-		ThrowIfFailed(factory->EnumWarpAdapter(IID_PPV_ARGS(&warpAdapter)));
+        com_ptr<IDXGIAdapter> warpAdapter;
+        check_hresult(factory->EnumWarpAdapter(IID_PPV_ARGS(warpAdapter.put())));
 
-		ThrowIfFailed(D3D12CreateDevice(
-			warpAdapter.Get(),
+        check_hresult(D3D12CreateDevice(
+			warpAdapter.get(),
 			D3D_FEATURE_LEVEL_11_0,
-			IID_PPV_ARGS(&m_device)
+			IID_PPV_ARGS(m_device.put())
 			));
 	}
 	else
 	{
-		ComPtr<IDXGIAdapter1> hardwareAdapter;
-		GetHardwareAdapter(factory.Get(), &hardwareAdapter);
+        com_ptr<IDXGIAdapter1> hardwareAdapter = GetHardwareAdapter(factory.get());
 
 		ThrowIfFailed(D3D12CreateDevice(
-			hardwareAdapter.Get(),
+			hardwareAdapter.get(),
 			D3D_FEATURE_LEVEL_11_0,
-			IID_PPV_ARGS(&m_device)
+			IID_PPV_ARGS(m_device.put())
 			));
 	}
 
@@ -109,7 +99,7 @@ void D3D12nBodyGravity::LoadPipeline()
 	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 
-	ThrowIfFailed(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_commandQueue)));
+    check_hresult(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(m_commandQueue.put())));
 	NAME_D3D12_OBJECT(m_commandQueue);
 
 	// Describe and create the swap chain.
@@ -123,16 +113,16 @@ void D3D12nBodyGravity::LoadPipeline()
 	swapChainDesc.SampleDesc.Count = 1;
 	swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
-	ComPtr<IDXGISwapChain1> swapChain;
-	ThrowIfFailed(factory->CreateSwapChainForCoreWindow(
-		m_commandQueue.Get(),		// Swap chain needs the queue so that it can force a flush on it.
-		reinterpret_cast<IUnknown*>(Windows::UI::Core::CoreWindow::GetForCurrentThread()),
+	com_ptr<IDXGISwapChain1> swapChain;
+	check_hresult(factory->CreateSwapChainForCoreWindow(
+		m_commandQueue.get(),		// Swap chain needs the queue so that it can force a flush on it.
+		reinterpret_cast<IUnknown*>(get_abi(winrt::Windows::UI::Core::CoreWindow::GetForCurrentThread())),
 		&swapChainDesc,
 		nullptr,
-		&swapChain
+		swapChain.put()
 		));
 
-	ThrowIfFailed(swapChain.As(&m_swapChain));
+    swapChain.as(m_swapChain);
 	m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
 	m_swapChainEvent = m_swapChain->GetFrameLatencyWaitableObject();
 
@@ -143,7 +133,7 @@ void D3D12nBodyGravity::LoadPipeline()
 		rtvHeapDesc.NumDescriptors = FrameCount;
 		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		ThrowIfFailed(m_device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_rtvHeap)));
+        check_hresult(m_device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_rtvHeap.put())));
 
 		// Describe and create a shader resource view (SRV) and unordered
 		// access view (UAV) descriptor heap.
@@ -151,7 +141,7 @@ void D3D12nBodyGravity::LoadPipeline()
 		srvUavHeapDesc.NumDescriptors = DescriptorCount;
 		srvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		srvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		ThrowIfFailed(m_device->CreateDescriptorHeap(&srvUavHeapDesc, IID_PPV_ARGS(&m_srvUavHeap)));
+        check_hresult(m_device->CreateDescriptorHeap(&srvUavHeapDesc, IID_PPV_ARGS(m_srvUavHeap.put())));
 		NAME_D3D12_OBJECT(m_srvUavHeap);
 
 		m_rtvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -165,13 +155,13 @@ void D3D12nBodyGravity::LoadPipeline()
 		// Create a RTV and a command allocator for each frame.
 		for (UINT n = 0; n < FrameCount; n++)
 		{
-			ThrowIfFailed(m_swapChain->GetBuffer(n, IID_PPV_ARGS(&m_renderTargets[n])));
-			m_device->CreateRenderTargetView(m_renderTargets[n].Get(), nullptr, rtvHandle);
+            check_hresult(m_swapChain->GetBuffer(n, IID_PPV_ARGS(m_renderTargets[n].put())));
+			m_device->CreateRenderTargetView(m_renderTargets[n].get(), nullptr, rtvHandle);
 			rtvHandle.Offset(1, m_rtvDescriptorSize);
 
 			NAME_D3D12_OBJECT_INDEXED(m_renderTargets, n);
 
-			ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocators[n])));
+            check_hresult(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_commandAllocators[n].put())));
 		}
 	}
 }
@@ -203,10 +193,10 @@ void D3D12nBodyGravity::LoadAssets()
 			CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
 			rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-			ComPtr<ID3DBlob> signature;
-			ComPtr<ID3DBlob> error;
-			ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
-			ThrowIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
+			com_ptr<ID3DBlob> signature;
+            com_ptr<ID3DBlob> error;
+            check_hresult(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, signature.put(), error.put()));
+            check_hresult(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(m_rootSignature.put())));
 			NAME_D3D12_OBJECT(m_rootSignature);
 		}
 
@@ -224,20 +214,20 @@ void D3D12nBodyGravity::LoadAssets()
 			CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC computeRootSignatureDesc;
 			computeRootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr);
 
-			ComPtr<ID3DBlob> signature;
-			ComPtr<ID3DBlob> error;
-			ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&computeRootSignatureDesc, featureData.HighestVersion, &signature, &error));
-			ThrowIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_computeRootSignature)));
+            com_ptr<ID3DBlob> signature;
+            com_ptr<ID3DBlob> error;
+            check_hresult(D3DX12SerializeVersionedRootSignature(&computeRootSignatureDesc, featureData.HighestVersion, signature.put(), error.put()));
+            check_hresult(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(m_computeRootSignature.put())));
 			NAME_D3D12_OBJECT(m_computeRootSignature);
 		}
 	}
 
 	// Create the pipeline states, which includes compiling and loading shaders.
 	{
-		ComPtr<ID3DBlob> vertexShader;
-		ComPtr<ID3DBlob> geometryShader;
-		ComPtr<ID3DBlob> pixelShader;
-		ComPtr<ID3DBlob> computeShader;
+        com_ptr<ID3DBlob> vertexShader;
+        com_ptr<ID3DBlob> geometryShader;
+        com_ptr<ID3DBlob> pixelShader;
+        com_ptr<ID3DBlob> computeShader;
 
 #if defined(_DEBUG)
 		// Enable better shader debugging with the graphics debugging tools.
@@ -247,10 +237,10 @@ void D3D12nBodyGravity::LoadAssets()
 #endif
 
 		// Load and compile shaders.
-		ThrowIfFailed(D3DCompileFromFile(GetAssetFullPath(L"ParticleDraw.hlsl").c_str(), nullptr, nullptr, "VSParticleDraw", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
-		ThrowIfFailed(D3DCompileFromFile(GetAssetFullPath(L"ParticleDraw.hlsl").c_str(), nullptr, nullptr, "GSParticleDraw", "gs_5_0", compileFlags, 0, &geometryShader, nullptr));
-		ThrowIfFailed(D3DCompileFromFile(GetAssetFullPath(L"ParticleDraw.hlsl").c_str(), nullptr, nullptr, "PSParticleDraw", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
-		ThrowIfFailed(D3DCompileFromFile(GetAssetFullPath(L"NBodyGravityCS.hlsl").c_str(), nullptr, nullptr, "CSMain", "cs_5_0", compileFlags, 0, &computeShader, nullptr));
+        check_hresult(D3DCompileFromFile(GetAssetFullPath(L"ParticleDraw.hlsl").c_str(), nullptr, nullptr, "VSParticleDraw", "vs_5_0", compileFlags, 0, vertexShader.put(), nullptr));
+        check_hresult(D3DCompileFromFile(GetAssetFullPath(L"ParticleDraw.hlsl").c_str(), nullptr, nullptr, "GSParticleDraw", "gs_5_0", compileFlags, 0, geometryShader.put(), nullptr));
+        check_hresult(D3DCompileFromFile(GetAssetFullPath(L"ParticleDraw.hlsl").c_str(), nullptr, nullptr, "PSParticleDraw", "ps_5_0", compileFlags, 0, pixelShader.put(), nullptr));
+        check_hresult(D3DCompileFromFile(GetAssetFullPath(L"NBodyGravityCS.hlsl").c_str(), nullptr, nullptr, "CSMain", "cs_5_0", compileFlags, 0, computeShader.put(), nullptr));
 
 		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
 		{
@@ -272,10 +262,10 @@ void D3D12nBodyGravity::LoadAssets()
 		// Describe and create the graphics pipeline state object (PSO).
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 		psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-		psoDesc.pRootSignature = m_rootSignature.Get();
-		psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
-		psoDesc.GS = CD3DX12_SHADER_BYTECODE(geometryShader.Get());
-		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+		psoDesc.pRootSignature = m_rootSignature.get();
+		psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.get());
+		psoDesc.GS = CD3DX12_SHADER_BYTECODE(geometryShader.get());
+		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.get());
 		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 		psoDesc.BlendState = blendDesc;
 		psoDesc.DepthStencilState = depthStencilDesc;
@@ -286,20 +276,20 @@ void D3D12nBodyGravity::LoadAssets()
 		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 		psoDesc.SampleDesc.Count = 1;
 
-		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineState)));
+        check_hresult(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pipelineState.put())));
 		NAME_D3D12_OBJECT(m_pipelineState);
 
 		// Describe and create the compute pipeline state object (PSO).
 		D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-		computePsoDesc.pRootSignature = m_computeRootSignature.Get();
-		computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(computeShader.Get());
+		computePsoDesc.pRootSignature = m_computeRootSignature.get();
+		computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(computeShader.get());
 
-		ThrowIfFailed(m_device->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&m_computeState)));
+        check_hresult(m_device->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(m_computeState.put())));
 		NAME_D3D12_OBJECT(m_computeState);
 	}
 
 	// Create the command list.
-	ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocators[m_frameIndex].Get(), m_pipelineState.Get(), IID_PPV_ARGS(&m_commandList)));
+    check_hresult(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocators[m_frameIndex].get(), m_pipelineState.get(), IID_PPV_ARGS(m_commandList.put())));
 	NAME_D3D12_OBJECT(m_commandList);
 
 	CreateVertexBuffer();
@@ -309,27 +299,27 @@ void D3D12nBodyGravity::LoadAssets()
 	// the command list that references it has finished executing on the GPU.
 	// We will flush the GPU at the end of this method to ensure the resource is not
 	// prematurely destroyed.
-	ComPtr<ID3D12Resource> constantBufferCSUpload;
+    com_ptr<ID3D12Resource> constantBufferCSUpload;
 
 	// Create the compute shader's constant buffer.
 	{
 		const UINT bufferSize = sizeof(ConstantBufferCS);
 
-		ThrowIfFailed(m_device->CreateCommittedResource(
+        check_hresult(m_device->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
 			D3D12_HEAP_FLAG_NONE,
 			&CD3DX12_RESOURCE_DESC::Buffer(bufferSize),
 			D3D12_RESOURCE_STATE_COPY_DEST,
 			nullptr,
-			IID_PPV_ARGS(&m_constantBufferCS)));
+			IID_PPV_ARGS(m_constantBufferCS.put())));
 
-		ThrowIfFailed(m_device->CreateCommittedResource(
+        check_hresult(m_device->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
 			D3D12_HEAP_FLAG_NONE,
 			&CD3DX12_RESOURCE_DESC::Buffer(bufferSize),
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			nullptr,
-			IID_PPV_ARGS(&constantBufferCSUpload)));
+			IID_PPV_ARGS(constantBufferCSUpload.put())));
 
 		NAME_D3D12_OBJECT(m_constantBufferCS);
 
@@ -344,45 +334,42 @@ void D3D12nBodyGravity::LoadAssets()
 		computeCBData.RowPitch = bufferSize;
 		computeCBData.SlicePitch = computeCBData.RowPitch;
 
-		UpdateSubresources<1>(m_commandList.Get(), m_constantBufferCS.Get(), constantBufferCSUpload.Get(), 0, 0, 1, &computeCBData);
-		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_constantBufferCS.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+		UpdateSubresources<1>(m_commandList.get(), m_constantBufferCS.get(), constantBufferCSUpload.get(), 0, 0, 1, &computeCBData);
+		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_constantBufferCS.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 	}
 
 	// Create the geometry shader's constant buffer.
 	{
 		const UINT constantBufferGSSize = sizeof(ConstantBufferGS) * FrameCount;
 
-		ThrowIfFailed(m_device->CreateCommittedResource(
+        check_hresult(m_device->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
 			D3D12_HEAP_FLAG_NONE,
 			&CD3DX12_RESOURCE_DESC::Buffer(constantBufferGSSize),
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			nullptr,
-			IID_PPV_ARGS(&m_constantBufferGS)
+			IID_PPV_ARGS(m_constantBufferGS.put())
 			));
 
 		NAME_D3D12_OBJECT(m_constantBufferGS);
 
 		CD3DX12_RANGE readRange(0, 0);		// We do not intend to read from this resource on the CPU.
-		ThrowIfFailed(m_constantBufferGS->Map(0, &readRange, reinterpret_cast<void**>(&m_pConstantBufferGSData)));
+        check_hresult(m_constantBufferGS->Map(0, &readRange, reinterpret_cast<void**>(&m_pConstantBufferGSData)));
 		ZeroMemory(m_pConstantBufferGSData, constantBufferGSSize);
 	}
 
 	// Close the command list and execute it to begin the initial GPU setup.
-	ThrowIfFailed(m_commandList->Close());
-	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+    check_hresult(m_commandList->Close());
+	ID3D12CommandList* ppCommandLists[] = { m_commandList.get() };
 	m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
 	// Create synchronization objects and wait until assets have been uploaded to the GPU.
 	{
-		ThrowIfFailed(m_device->CreateFence(m_renderContextFenceValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_renderContextFence)));
+        check_hresult(m_device->CreateFence(m_renderContextFenceValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_renderContextFence.put())));
 		m_renderContextFenceValue++;
 
 		m_renderContextFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-		if (m_renderContextFenceEvent == nullptr)
-		{
-			ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
-		}
+        check_bool(!!m_renderContextFenceEvent);
 
 		WaitForRenderContext();
 	}
@@ -395,35 +382,35 @@ void D3D12nBodyGravity::CreateVertexBuffer()
 	vertices.resize(ParticleCount);
 	for (UINT i = 0; i < ParticleCount; i++)
 	{
-		vertices[i].color = XMFLOAT4(1.0f, 1.0f, 0.2f, 1.0f);
+		vertices[i].color = DirectX::XMFLOAT4(1.0f, 1.0f, 0.2f, 1.0f);
 	}
 	const UINT bufferSize = ParticleCount * sizeof(ParticleVertex);
 
-	ThrowIfFailed(m_device->CreateCommittedResource(
+    check_hresult(m_device->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
 		D3D12_HEAP_FLAG_NONE,
 		&CD3DX12_RESOURCE_DESC::Buffer(bufferSize),
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		nullptr,
-		IID_PPV_ARGS(&m_vertexBuffer)));
+		IID_PPV_ARGS(m_vertexBuffer.put())));
 
-	ThrowIfFailed(m_device->CreateCommittedResource(
+    check_hresult(m_device->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
 		D3D12_HEAP_FLAG_NONE,
 		&CD3DX12_RESOURCE_DESC::Buffer(bufferSize),
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
-		IID_PPV_ARGS(&m_vertexBufferUpload)));
+		IID_PPV_ARGS(m_vertexBufferUpload.put())));
 
 	NAME_D3D12_OBJECT(m_vertexBuffer);
 
 	D3D12_SUBRESOURCE_DATA vertexData = {};
-	vertexData.pData = reinterpret_cast<UINT8*>(&vertices[0]);
+	vertexData.pData = vertices.data();
 	vertexData.RowPitch = bufferSize;
 	vertexData.SlicePitch = vertexData.RowPitch;
 
-	UpdateSubresources<1>(m_commandList.Get(), m_vertexBuffer.Get(), m_vertexBufferUpload.Get(), 0, 0, 1, &vertexData);
-	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+	UpdateSubresources<1>(m_commandList.get(), m_vertexBuffer.get(), m_vertexBufferUpload.get(), 0, 0, 1, &vertexData);
+	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_vertexBuffer.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 
 	m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
 	m_vertexBufferView.SizeInBytes = static_cast<UINT>(bufferSize);
@@ -437,14 +424,14 @@ float D3D12nBodyGravity::RandomPercent()
 	return ret / 5000.0f;
 }
 
-void D3D12nBodyGravity::LoadParticles(_Out_writes_(numParticles) Particle* pParticles, const XMFLOAT3& center, const XMFLOAT4& velocity, float spread, UINT numParticles)
+void D3D12nBodyGravity::LoadParticles(_Out_writes_(numParticles) Particle* pParticles, const DirectX::XMFLOAT3& center, const DirectX::XMFLOAT4& velocity, float spread, UINT numParticles)
 {
 	srand(0);
 	for (UINT i = 0; i < numParticles; i++)
 	{
-		XMFLOAT3 delta(spread, spread, spread);
+        DirectX::XMFLOAT3 delta(spread, spread, spread);
 
-		while (XMVectorGetX(XMVector3LengthSq(XMLoadFloat3(&delta))) > spread * spread)
+		while (DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(DirectX::XMLoadFloat3(&delta))) > spread * spread)
 		{
 			delta.x = RandomPercent() * spread;
 			delta.y = RandomPercent() * spread;
@@ -485,50 +472,50 @@ void D3D12nBodyGravity::CreateParticleBuffers()
 		// renders the other. When rendering completes, the threads will swap 
 		// which buffer they work on.
 
-		ThrowIfFailed(m_device->CreateCommittedResource(
+		check_hresult(m_device->CreateCommittedResource(
 			&defaultHeapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&bufferDesc,
 			D3D12_RESOURCE_STATE_COPY_DEST,
 			nullptr,
-			IID_PPV_ARGS(&m_particleBuffer0[index])));
+			IID_PPV_ARGS(m_particleBuffer0[index].put())));
 
-		ThrowIfFailed(m_device->CreateCommittedResource(
+        check_hresult(m_device->CreateCommittedResource(
 			&defaultHeapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&bufferDesc,
 			D3D12_RESOURCE_STATE_COPY_DEST,
 			nullptr,
-			IID_PPV_ARGS(&m_particleBuffer1[index])));
+			IID_PPV_ARGS(m_particleBuffer1[index].put())));
 
-		ThrowIfFailed(m_device->CreateCommittedResource(
+        check_hresult(m_device->CreateCommittedResource(
 			&uploadHeapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&uploadBufferDesc,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			nullptr,
-			IID_PPV_ARGS(&m_particleBuffer0Upload[index])));
+			IID_PPV_ARGS(m_particleBuffer0Upload[index].put())));
 
-		ThrowIfFailed(m_device->CreateCommittedResource(
+        check_hresult(m_device->CreateCommittedResource(
 			&uploadHeapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&uploadBufferDesc,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			nullptr,
-			IID_PPV_ARGS(&m_particleBuffer1Upload[index])));
+			IID_PPV_ARGS(m_particleBuffer1Upload[index].put())));
 
 		NAME_D3D12_OBJECT_INDEXED(m_particleBuffer0, index);
 		NAME_D3D12_OBJECT_INDEXED(m_particleBuffer1, index);
 
 		D3D12_SUBRESOURCE_DATA particleData = {};
-		particleData.pData = reinterpret_cast<UINT8*>(&data[0]);
+		particleData.pData = data.data();
 		particleData.RowPitch = dataSize;
 		particleData.SlicePitch = particleData.RowPitch;
 
-		UpdateSubresources<1>(m_commandList.Get(), m_particleBuffer0[index].Get(), m_particleBuffer0Upload[index].Get(), 0, 0, 1, &particleData);
-		UpdateSubresources<1>(m_commandList.Get(), m_particleBuffer1[index].Get(), m_particleBuffer1Upload[index].Get(), 0, 0, 1, &particleData);
-		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer0[index].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer1[index].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+		UpdateSubresources<1>(m_commandList.get(), m_particleBuffer0[index].get(), m_particleBuffer0Upload[index].get(), 0, 0, 1, &particleData);
+		UpdateSubresources<1>(m_commandList.get(), m_particleBuffer1[index].get(), m_particleBuffer1Upload[index].get(), 0, 0, 1, &particleData);
+		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer0[index].get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer1[index].get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -541,8 +528,8 @@ void D3D12nBodyGravity::CreateParticleBuffers()
 
 		CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle0(m_srvUavHeap->GetCPUDescriptorHandleForHeapStart(), SrvParticlePosVelo0 + index, m_srvUavDescriptorSize);
 		CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle1(m_srvUavHeap->GetCPUDescriptorHandleForHeapStart(), SrvParticlePosVelo1 + index, m_srvUavDescriptorSize);
-		m_device->CreateShaderResourceView(m_particleBuffer0[index].Get(), &srvDesc, srvHandle0);
-		m_device->CreateShaderResourceView(m_particleBuffer1[index].Get(), &srvDesc, srvHandle1);
+		m_device->CreateShaderResourceView(m_particleBuffer0[index].get(), &srvDesc, srvHandle0);
+		m_device->CreateShaderResourceView(m_particleBuffer1[index].get(), &srvDesc, srvHandle1);
 
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 		uavDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -555,8 +542,8 @@ void D3D12nBodyGravity::CreateParticleBuffers()
 
 		CD3DX12_CPU_DESCRIPTOR_HANDLE uavHandle0(m_srvUavHeap->GetCPUDescriptorHandleForHeapStart(), UavParticlePosVelo0 + index, m_srvUavDescriptorSize);
 		CD3DX12_CPU_DESCRIPTOR_HANDLE uavHandle1(m_srvUavHeap->GetCPUDescriptorHandleForHeapStart(), UavParticlePosVelo1 + index, m_srvUavDescriptorSize);
-		m_device->CreateUnorderedAccessView(m_particleBuffer0[index].Get(), nullptr, &uavDesc, uavHandle0);
-		m_device->CreateUnorderedAccessView(m_particleBuffer1[index].Get(), nullptr, &uavDesc, uavHandle1);
+		m_device->CreateUnorderedAccessView(m_particleBuffer0[index].get(), nullptr, &uavDesc, uavHandle0);
+		m_device->CreateUnorderedAccessView(m_particleBuffer1[index].get(), nullptr, &uavDesc, uavHandle1);
 	}
 }
 
@@ -566,16 +553,13 @@ void D3D12nBodyGravity::CreateAsyncContexts()
 	{
 		// Create compute resources.
 		D3D12_COMMAND_QUEUE_DESC queueDesc = { D3D12_COMMAND_LIST_TYPE_COMPUTE, 0, D3D12_COMMAND_QUEUE_FLAG_NONE };
-		ThrowIfFailed(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_computeCommandQueue[threadIndex])));
-		ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(&m_computeAllocator[threadIndex])));
-		ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeAllocator[threadIndex].Get(), nullptr, IID_PPV_ARGS(&m_computeCommandList[threadIndex])));
-		ThrowIfFailed(m_device->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&m_threadFences[threadIndex])));
+		ThrowIfFailed(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(m_computeCommandQueue[threadIndex].put())));
+		ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(m_computeAllocator[threadIndex].put())));
+		ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeAllocator[threadIndex].get(), nullptr, IID_PPV_ARGS(m_computeCommandList[threadIndex].put())));
+		ThrowIfFailed(m_device->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(m_threadFences[threadIndex].put())));
 
 		m_threadFenceEvents[threadIndex] = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-		if (m_threadFenceEvents[threadIndex] == nullptr)
-		{
-			ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
-		}
+        check_bool(!!m_threadFenceEvents[threadIndex]);
 
 		m_threadData[threadIndex].pContext = this;
 		m_threadData[threadIndex].threadIndex = threadIndex;
@@ -588,7 +572,7 @@ void D3D12nBodyGravity::CreateAsyncContexts()
 			CREATE_SUSPENDED,
 			nullptr);
 
-		ResumeThread(m_threadHandles[threadIndex]);
+		ResumeThread(m_threadHandles[threadIndex].get());
 	}
 }
 
@@ -596,9 +580,9 @@ void D3D12nBodyGravity::CreateAsyncContexts()
 void D3D12nBodyGravity::OnUpdate()
 {
 	// Wait for the previous Present to complete.
-	WaitForSingleObjectEx(m_swapChainEvent, 100, FALSE);
+	WaitForSingleObjectEx(m_swapChainEvent.get(), 100, FALSE);
 
-	m_timer.Tick(NULL);
+	m_timer.Tick(nullptr);
 	m_camera.Update(static_cast<float>(m_timer.GetElapsedSeconds()));
 
 	ConstantBufferGS constantBufferGS = {};
@@ -627,23 +611,23 @@ void D3D12nBodyGravity::OnRender()
 		{
 			// Instruct the rendering command queue to wait for the current 
 			// compute work to complete.
-			ThrowIfFailed(m_commandQueue->Wait(m_threadFences[n].Get(), threadFenceValue));
+			check_hresult(m_commandQueue->Wait(m_threadFences[n].get(), threadFenceValue));
 		}
 	}
 
-	PIXBeginEvent(m_commandQueue.Get(), 0, L"Render");
+	PIXBeginEvent(m_commandQueue.get(), 0, L"Render");
 
 	// Record all the commands we need to render the scene into the command list.
 	PopulateCommandList();
 
 	// Execute the command list.
-	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+	ID3D12CommandList* ppCommandLists[] = { m_commandList.get() };
 	m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-	PIXEndEvent(m_commandQueue.Get());
+	PIXEndEvent(m_commandQueue.get());
 
 	// Present the frame.
-	ThrowIfFailed(m_swapChain->Present(1, 0));
+    check_hresult(m_swapChain->Present(1, 0));
 
 	MoveToNextFrame();
 }
@@ -654,20 +638,20 @@ void D3D12nBodyGravity::PopulateCommandList()
 	// Command list allocators can only be reset when the associated
 	// command lists have finished execution on the GPU; apps should use
 	// fences to determine GPU execution progress.
-	ThrowIfFailed(m_commandAllocators[m_frameIndex]->Reset());
+    check_hresult(m_commandAllocators[m_frameIndex]->Reset());
 
 	// However, when ExecuteCommandList() is called on a particular command
 	// list, that command list can then be reset at any time and must be before
 	// re-recording.
-	ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_frameIndex].Get(), m_pipelineState.Get()));
+    check_hresult(m_commandList->Reset(m_commandAllocators[m_frameIndex].get(), m_pipelineState.get()));
 
 	// Set necessary state.
-	m_commandList->SetPipelineState(m_pipelineState.Get());
-	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+	m_commandList->SetPipelineState(m_pipelineState.get());
+	m_commandList->SetGraphicsRootSignature(m_rootSignature.get());
 
 	m_commandList->SetGraphicsRootConstantBufferView(GraphicsRootCBV, m_constantBufferGS->GetGPUVirtualAddress() + m_frameIndex * sizeof(ConstantBufferGS));
 
-	ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.Get() };
+	ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.get() };
 	m_commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 
 	m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
@@ -675,7 +659,7 @@ void D3D12nBodyGravity::PopulateCommandList()
 	m_commandList->RSSetScissorRects(1, &m_scissorRect);
 
 	// Indicate that the back buffer will be used as a render target.
-	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
 	m_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
@@ -702,25 +686,25 @@ void D3D12nBodyGravity::PopulateCommandList()
 		CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(m_srvUavHeap->GetGPUDescriptorHandleForHeapStart(), srvIndex, m_srvUavDescriptorSize);
 		m_commandList->SetGraphicsRootDescriptorTable(GraphicsRootSRVTable, srvHandle);
 
-		PIXBeginEvent(m_commandList.Get(), 0, L"Draw particles for thread %u", n);
+		PIXBeginEvent(m_commandList.get(), 0, L"Draw particles for thread %u", n);
 		m_commandList->DrawInstanced(ParticleCount, 1, 0, 0);
-		PIXEndEvent(m_commandList.Get());
+		PIXEndEvent(m_commandList.get());
 	}
 
 	m_commandList->RSSetViewports(1, &m_viewport);
 
 	// Indicate that the back buffer will now be used to present.
-	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
-	ThrowIfFailed(m_commandList->Close());
+	check_hresult(m_commandList->Close());
 }
 
 DWORD D3D12nBodyGravity::AsyncComputeThreadProc(int threadIndex)
 {
-	ID3D12CommandQueue* pCommandQueue = m_computeCommandQueue[threadIndex].Get();
-	ID3D12CommandAllocator* pCommandAllocator = m_computeAllocator[threadIndex].Get();
-	ID3D12GraphicsCommandList* pCommandList = m_computeCommandList[threadIndex].Get();
-	ID3D12Fence* pFence = m_threadFences[threadIndex].Get();
+	ID3D12CommandQueue* pCommandQueue = m_computeCommandQueue[threadIndex].get();
+	ID3D12CommandAllocator* pCommandAllocator = m_computeAllocator[threadIndex].get();
+	ID3D12GraphicsCommandList* pCommandList = m_computeCommandList[threadIndex].get();
+	ID3D12Fence* pFence = m_threadFences[threadIndex].get();
 
 	while (0 == InterlockedGetValue(&m_terminating))
 	{
@@ -728,7 +712,7 @@ DWORD D3D12nBodyGravity::AsyncComputeThreadProc(int threadIndex)
 		Simulate(threadIndex);
 
 		// Close and execute the command list.
-		ThrowIfFailed(pCommandList->Close());
+		check_hresult(pCommandList->Close());
 		ID3D12CommandList* ppCommandLists[] = { pCommandList };
 
 		PIXBeginEvent(pCommandQueue, 0, L"Thread %d: Iterate on the particle simulation", threadIndex);
@@ -737,16 +721,16 @@ DWORD D3D12nBodyGravity::AsyncComputeThreadProc(int threadIndex)
 
 		// Wait for the compute shader to complete the simulation.
 		UINT64 threadFenceValue = InterlockedIncrement(&m_threadFenceValues[threadIndex]);
-		ThrowIfFailed(pCommandQueue->Signal(pFence, threadFenceValue));
-		ThrowIfFailed(pFence->SetEventOnCompletion(threadFenceValue, m_threadFenceEvents[threadIndex]));
-		WaitForSingleObject(m_threadFenceEvents[threadIndex], INFINITE);
+        check_hresult(pCommandQueue->Signal(pFence, threadFenceValue));
+        check_hresult(pFence->SetEventOnCompletion(threadFenceValue, m_threadFenceEvents[threadIndex].get()));
+		WaitForSingleObject(m_threadFenceEvents[threadIndex].get(), INFINITE);
 
 		// Wait for the render thread to be done with the SRV so that
 		// the next frame in the simulation can run.
 		UINT64 renderContextFenceValue = InterlockedGetValue(&m_renderContextFenceValues[threadIndex]);
 		if (m_renderContextFence->GetCompletedValue() < renderContextFenceValue)
 		{
-			ThrowIfFailed(pCommandQueue->Wait(m_renderContextFence.Get(), renderContextFenceValue));
+            check_hresult(pCommandQueue->Wait(m_renderContextFence.get(), renderContextFenceValue));
 			InterlockedExchange(&m_renderContextFenceValues[threadIndex], 0);
 		}
 
@@ -754,8 +738,8 @@ DWORD D3D12nBodyGravity::AsyncComputeThreadProc(int threadIndex)
 		m_srvIndex[threadIndex] = 1 - m_srvIndex[threadIndex];
 
 		// Prepare for the next frame.
-		ThrowIfFailed(pCommandAllocator->Reset());
-		ThrowIfFailed(pCommandList->Reset(pCommandAllocator, m_computeState.Get()));
+        check_hresult(pCommandAllocator->Reset());
+        check_hresult(pCommandList->Reset(pCommandAllocator, m_computeState.get()));
 	}
 
 	return 0;
@@ -764,7 +748,7 @@ DWORD D3D12nBodyGravity::AsyncComputeThreadProc(int threadIndex)
 // Run the particle simulation using the compute shader.
 void D3D12nBodyGravity::Simulate(UINT threadIndex)
 {
-	ID3D12GraphicsCommandList* pCommandList = m_computeCommandList[threadIndex].Get();
+	ID3D12GraphicsCommandList* pCommandList = m_computeCommandList[threadIndex].get();
 
 	UINT srvIndex;
 	UINT uavIndex;
@@ -773,21 +757,21 @@ void D3D12nBodyGravity::Simulate(UINT threadIndex)
 	{
 		srvIndex = SrvParticlePosVelo0;
 		uavIndex = UavParticlePosVelo1;
-		pUavResource = m_particleBuffer1[threadIndex].Get();
+		pUavResource = m_particleBuffer1[threadIndex].get();
 	}
 	else
 	{
 		srvIndex = SrvParticlePosVelo1;
 		uavIndex = UavParticlePosVelo0;
-		pUavResource = m_particleBuffer0[threadIndex].Get();
+		pUavResource = m_particleBuffer0[threadIndex].get();
 	}
 
 	pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(pUavResource, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
 
-	pCommandList->SetPipelineState(m_computeState.Get());
-	pCommandList->SetComputeRootSignature(m_computeRootSignature.Get());
+	pCommandList->SetPipelineState(m_computeState.get());
+	pCommandList->SetComputeRootSignature(m_computeRootSignature.get());
 
-	ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.Get() };
+	ID3D12DescriptorHeap* ppHeaps[] = { m_srvUavHeap.get() };
 	pCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(m_srvUavHeap->GetGPUDescriptorHandleForHeapStart(), srvIndex + threadIndex, m_srvUavDescriptorSize);
@@ -806,27 +790,19 @@ void D3D12nBodyGravity::OnDestroy()
 {
 	// Notify the compute threads that the app is shutting down.
 	InterlockedExchange(&m_terminating, 1);
-	WaitForMultipleObjects(ThreadCount, m_threadHandles, TRUE, INFINITE);
+	WaitForMultipleObjects(ThreadCount, (const HANDLE*)(m_threadFenceEvents), TRUE, INFINITE);
 
 	// Ensure that the GPU is no longer referencing resources that are about to be
 	// cleaned up by the destructor.
 	WaitForRenderContext();
-
-	// Close handles to fence events and threads.
-	CloseHandle(m_renderContextFenceEvent);
-	for (int n = 0; n < ThreadCount; n++)
-	{
-		CloseHandle(m_threadHandles[n]);
-		CloseHandle(m_threadFenceEvents[n]);
-	}
 }
 
-void D3D12nBodyGravity::OnKeyDown(UINT8 key)
+void D3D12nBodyGravity::OnKeyDown(winrt::Windows::System::VirtualKey key)
 {
 	m_camera.OnKeyDown(key);
 }
 
-void D3D12nBodyGravity::OnKeyUp(UINT8 key)
+void D3D12nBodyGravity::OnKeyUp(winrt::Windows::System::VirtualKey key)
 {
 	m_camera.OnKeyUp(key);
 }
@@ -834,14 +810,14 @@ void D3D12nBodyGravity::OnKeyUp(UINT8 key)
 void D3D12nBodyGravity::WaitForRenderContext()
 {
 	// Add a signal command to the queue.
-	ThrowIfFailed(m_commandQueue->Signal(m_renderContextFence.Get(), m_renderContextFenceValue));
+	ThrowIfFailed(m_commandQueue->Signal(m_renderContextFence.get(), m_renderContextFenceValue));
 
 	// Instruct the fence to set the event object when the signal command completes.
-	ThrowIfFailed(m_renderContextFence->SetEventOnCompletion(m_renderContextFenceValue, m_renderContextFenceEvent));
+	ThrowIfFailed(m_renderContextFence->SetEventOnCompletion(m_renderContextFenceValue, m_renderContextFenceEvent.get()));
 	m_renderContextFenceValue++;
 
 	// Wait until the signal command has been processed.
-	WaitForSingleObject(m_renderContextFenceEvent, INFINITE);
+	WaitForSingleObject(m_renderContextFenceEvent.get(), INFINITE);
 }
 
 // Cycle through the frame resources. This method blocks execution if the 
@@ -853,7 +829,7 @@ void D3D12nBodyGravity::MoveToNextFrame()
 	m_frameFenceValues[m_frameIndex] = m_renderContextFenceValue;
 
 	// Signal and increment the fence value.
-	ThrowIfFailed(m_commandQueue->Signal(m_renderContextFence.Get(), m_renderContextFenceValue));
+	ThrowIfFailed(m_commandQueue->Signal(m_renderContextFence.get(), m_renderContextFenceValue));
 	m_renderContextFenceValue++;
 
 	// Update the frame index.
@@ -862,7 +838,7 @@ void D3D12nBodyGravity::MoveToNextFrame()
 	// If the next frame is not ready to be rendered yet, wait until it is ready.
 	if (m_renderContextFence->GetCompletedValue() < m_frameFenceValues[m_frameIndex])
 	{
-		ThrowIfFailed(m_renderContextFence->SetEventOnCompletion(m_frameFenceValues[m_frameIndex], m_renderContextFenceEvent));
-		WaitForSingleObject(m_renderContextFenceEvent, INFINITE);
+		ThrowIfFailed(m_renderContextFence->SetEventOnCompletion(m_frameFenceValues[m_frameIndex], m_renderContextFenceEvent.get()));
+		WaitForSingleObject(m_renderContextFenceEvent.get(), INFINITE);
 	}
 }

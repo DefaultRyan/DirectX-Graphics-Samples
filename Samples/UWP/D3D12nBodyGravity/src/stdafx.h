@@ -30,3 +30,11 @@
 
 #include <wrl.h>
 #include <vector>
+#include <atomic>
+
+#include <winrt/Windows.ApplicationModel.h>
+#include <winrt/Windows.ApplicationModel.Activation.h>
+#include <winrt/Windows.ApplicationModel.Core.h>
+#include <winrt/Windows.System.h>
+#include <winrt/Windows.UI.Core.h>
+#include <winrt/Windows.UI.ViewManagement.h>

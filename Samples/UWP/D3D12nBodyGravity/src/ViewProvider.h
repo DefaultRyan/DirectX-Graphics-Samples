@@ -11,14 +11,15 @@
 
 #pragma once
 
-using namespace Windows::ApplicationModel::Core;
+#include "DXSample.h"
 
-ref class ViewProvider sealed : IFrameworkViewSource
+struct ViewProvider final : winrt::implements<ViewProvider, winrt::Windows::ApplicationModel::Core::IFrameworkViewSource>
 {
-public:
-	ViewProvider(UINT_PTR pSample);
-	virtual IFrameworkView^ CreateView();
+    explicit ViewProvider(DXSample* pSample)
+        : m_pSample(pSample)
+    {}
+    winrt::Windows::ApplicationModel::Core::IFrameworkView CreateView();
 
 private:
-	UINT_PTR m_pSample;
+    DXSample * m_pSample;
 };

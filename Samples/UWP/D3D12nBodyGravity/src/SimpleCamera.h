@@ -11,22 +11,20 @@
 
 #pragma once
 
-using namespace DirectX;
-
 class SimpleCamera
 {
 public:
 	SimpleCamera();
 
-	void Init(XMFLOAT3 position);
+	void Init(DirectX::XMFLOAT3 position);
 	void Update(float elapsedSeconds);
-	XMMATRIX GetViewMatrix();
-	XMMATRIX GetProjectionMatrix(float fov, float aspectRatio, float nearPlane = 1.0f, float farPlane = 1000.0f);
+    DirectX::XMMATRIX GetViewMatrix();
+    DirectX::XMMATRIX GetProjectionMatrix(float fov, float aspectRatio, float nearPlane = 1.0f, float farPlane = 1000.0f);
 	void SetMoveSpeed(float unitsPerSecond);
 	void SetTurnSpeed(float radiansPerSecond);
 
-	void OnKeyDown(WPARAM key);
-	void OnKeyUp(WPARAM key);
+	void OnKeyDown(winrt::Windows::System::VirtualKey key);
+	void OnKeyUp(winrt::Windows::System::VirtualKey key);
 
 private:
 	void Reset();
@@ -44,12 +42,12 @@ private:
 		bool down;
 	};
 
-	XMFLOAT3 m_initialPosition;
-	XMFLOAT3 m_position;
+    DirectX::XMFLOAT3 m_initialPosition;
+    DirectX::XMFLOAT3 m_position;
 	float m_yaw;				// Relative to the +z axis.
 	float m_pitch;				// Relative to the xz plane.
-	XMFLOAT3 m_lookDirection;
-	XMFLOAT3 m_upDirection;
+    DirectX::XMFLOAT3 m_lookDirection;
+    DirectX::XMFLOAT3 m_upDirection;
 	float m_moveSpeed;			// Speed at which the camera moves, in units per second.
 	float m_turnSpeed;			// Speed at which the camera turns, in radians per second.
 
